@@ -1,5 +1,7 @@
 # weather-chat
 
+**[在线预览 → https://tonechou.github.io/weather-chat/](https://tonechou.github.io/weather-chat/)**
+
 一个**零依赖的单文件** AI 对话框页面，支持「正常 / 雨天 / 雪天」三种外观切换。
 
 页面只做用户消息的发送与展示，**不包含 AI 回复逻辑**，也没有任何后端与网络请求。
@@ -25,7 +27,9 @@
 
 ## 运行
 
-直接双击 `index.html` 即可，也可以用任意静态服务器：
+**在线体验**：直接打开 https://tonechou.github.io/weather-chat/ ，无需安装任何东西。
+
+**本地运行**：双击 `index.html` 即可，也可以用任意静态服务器：
 
 ```bash
 python -m http.server 8000
