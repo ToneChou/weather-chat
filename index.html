@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 对话框</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html, body {
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    overflow: hidden;
+  }
+
+  /* ===== 主题色 ===== */
+  body.theme-normal {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  }
+  body.theme-rain {
+    background: linear-gradient(180deg, #2c3e50 0%, #34495e 50%, #4a6378 100%);
+  }
+  body.theme-snow {
+    background: linear-gradient(180deg, #8fa9c9 0%, #b8c8db 50%, #d6e1ed 100%);
+  }
+
+  /* ===== 整体布局 ===== */
+  .app {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    z-index: 1;
+  }
+
+  /* 动画画布 */
+  #effectCanvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+    transition: opacity 0.6s ease;
+    opacity: 0;
+  }
+  body.theme-rain #effectCanvas,
+  body.theme-snow #effectCanvas {
+    opacity: 1;
+  }
+
+  /* ===== 顶部栏 ===== */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background: rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    color: #fff;
+    z-index: 2;
+  }
+
+  body.theme-normal .header { color: #fff; }
+  body.theme-rain .header { color: #e8eef8; }
+  body.theme-snow .header { color: #2c3e50; }
+
+  .header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+
+  /* 外观切换器（三个常驻按钮） */
+  .theme-switcher {
+    display: flex;
+    gap: 6px;
+    padding: 4px;
+    border-radius: 24px;
+    backdrop-filter: blur(8px);
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+  }
+
+  .theme-btn {
+    background: transparent;
+    border: none;
+    color: inherit;
+    padding: 6px 14px;
+    border-radius: 18px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s ease;
+    opacity: 0.75;
+  }
+  .theme-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    opacity: 1;
+  }
+  .theme-btn.active {
+    background: rgba(255, 255, 255, 0.3);
+    opacity: 1;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  }
+
+  /* ===== 聊天区域 ===== */
+  .chat-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    z-index: 2;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+  }
+  .chat-container::-webkit-scrollbar { width: 6px; }
+  .chat-container::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+  }
+
+  .message {
+    max-width: 70%;
+    padding: 12px 16px;
+    border-radius: 18px;
+    font-size: 15px;
+    line-height: 1.5;
+    word-wrap: break-word;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    animation: slideIn 0.3s ease;
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .message.user {
+    align-self: flex-end;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+
+  .message.ai {
+    align-self: flex-start;
+    background: rgba(255, 255, 255, 0.85);
+    color: #333;
+    border-bottom-left-radius: 4px;
+  }
+  body.theme-rain .message.ai {
+    background: rgba(220, 230, 240, 0.85);
+    color: #1a2530;
+  }
+  body.theme-snow .message.ai {
+    background: rgba(255, 255, 255, 0.92);
+    color: #2c3e50;
+  }
+
+  .welcome {
+    align-self: center;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.85);
+    margin: auto;
+    padding: 20px;
+  }
+  body.theme-snow .welcome { color: rgba(40, 50, 70, 0.8); }
+  body.theme-rain .welcome  { color: rgba(230, 240, 255, 0.85); }
+
+  .welcome h2 {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .welcome p {
+    font-size: 14px;
+    opacity: 0.85;
+  }
+
+  /* ===== 底部输入区 ===== */
+  .input-area {
+    padding: 16px 24px 24px;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    z-index: 2;
+  }
+
+  .input-wrapper {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    max-width: 900px;
+    margin: 0 auto;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 24px;
+    padding: 8px 8px 8px 20px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    transition: box-shadow 0.2s ease;
+  }
+  .input-wrapper:focus-within {
+    box-shadow: 0 4px 24px rgba(102, 126, 234, 0.4);
+  }
+
+  #userInput {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 15px;
+    line-height: 1.5;
+    resize: none;
+    max-height: 120px;
+    min-height: 24px;
+    padding: 6px 0;
+    font-family: inherit;
+    color: #333;
+  }
+
+  .send-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    flex-shrink: 0;
+  }
+  .send-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.5);
+  }
+  .send-btn:active { transform: scale(0.95); }
+  .send-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .send-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+</style>
+</head>
+<body class="theme-normal">
+
+<canvas id="effectCanvas"></canvas>
+
+<div class="app">
+  <!-- 顶部栏 -->
+  <div class="header">
+    <h1>AI 智能助手</h1>
+    <div class="theme-switcher" id="themeSwitcher">
+      <button class="theme-btn active" data-theme="normal" type="button">☀️ 正常</button>
+      <button class="theme-btn"        data-theme="rain"  type="button">🌧️ 雨天</button>
+      <button class="theme-btn"        data-theme="snow"  type="button">❄️ 雪天</button>
+    </div>
+  </div>
+
+  <!-- 聊天内容 -->
+  <div class="chat-container" id="chatContainer">
+    <div class="welcome" id="welcome">
+      <h2>你好，我是 AI 助手</h2>
+      <p>开始你的对话吧～</p>
+    </div>
+  </div>
+
+  <!-- 输入区 -->
+  <div class="input-area">
+    <div class="input-wrapper">
+      <textarea id="userInput" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1"></textarea>
+      <button class="send-btn" id="sendBtn" title="发送">
+        <svg viewBox="0 0 24 24">
+          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   主题切换（三个按钮直接绑定）
+============================================================ */
+const body          = document.body;
+const themeSwitcher = document.getElementById('themeSwitcher');
+const themeButtons   = themeSwitcher.querySelectorAll('.theme-btn');
+
+function setTheme(theme) {
+  if (!['normal', 'rain', 'snow'].includes(theme)) theme = 'normal';
+  body.classList.remove('theme-normal', 'theme-rain', 'theme-snow');
+  body.classList.add(`theme-${theme}`);
+
+  themeButtons.forEach(b => {
+    b.classList.toggle('active', b.dataset.theme === theme);
+  });
+
+  // 启动/停止动画
+  if (theme === 'rain')      startRain();
+  else if (theme === 'snow') startSnow();
+  else                       stopEffect();
+
+  // 离开雪天时撤掉扫帚光标。若用键盘切主题、鼠标停在原地没动过，
+  // 就不会有 mousemove 触发刷新，图标会残留在屏幕上。
+  refreshSnowCursor();
+
+  localStorage.setItem('chat-theme', theme);
+}
+
+// 每个按钮直接绑定点击事件（事件委托作为兜底）
+themeButtons.forEach(btn => {
+  btn.addEventListener('click', () => setTheme(btn.dataset.theme));
+});
+// 事件委托：万一按钮替换也能正常切换
+themeSwitcher.addEventListener('click', (e) => {
+  const btn = e.target.closest('.theme-btn');
+  if (btn) setTheme(btn.dataset.theme);
+});
+
+/* ============================================================
+   Canvas 雨滴 / 雪花 动画
+============================================================ */
+const canvas = document.getElementById('effectCanvas');
+const ctx    = canvas.getContext('2d');
+let particles = [];
+let splashes  = [];          // 落地水花（小水珠 + 涟漪）
+let animationId = null;
+let currentEffect = null;
+
+/* ---------- 地面：底部输入区的顶边 ---------- */
+const inputArea = document.querySelector('.input-area');
+let groundY = 0;
+
+/* ---------- 积雪：「一维高度图」---------- */
+// 地面从左到右切成若干列，每列记一个积雪厚度（像素）。
+// 累积 = 加到对应列；擦除 = 减对应列；绘制 = 把高度图连成雪坡曲线。
+const COL_W         = 4;    // 列宽，越小越精细
+const MAX_DEPTH     = 55;   // 积雪厚度上限
+const INITIAL_DEPTH = 14;   // 初始雪地厚度
+// 积雪累积。刻意不用「× dt」：那会让累积速度随帧率漂移，高刷屏积雪长得更快。
+// ACC_PEAK 是单片雪花落地对其正下方那一列造成的隆起峰值。
+// 之所以需要「峰值」这么大、且必须摊到邻域：整个地面被切成几百列，
+// 若单片只给单列加一点点，要让整片雪面上升 1px 得攒十几分钟。
+const ACC_PEAK      = 0.9;  // 单片雪花在落点处的隆起峰值（像素）
+const ACC_SPREAD    = 6;    // 积雪摊开的半径（列数）
+const ERASE_RATE    = 210;  // 擦除速率（像素/秒，持续性动作故按时间算）
+const BRUSH_R       = 44;   // 鼠标笔刷半径
+let cols      = 0;
+let snowDepth = [];
+
+function initSnowGround() {
+  cols = Math.max(2, Math.ceil(canvas.width / COL_W) + 1);
+  snowDepth = new Array(cols);
+  for (let i = 0; i < cols; i++) {
+    // 初始起伏：两层不同频率的正弦叠加，避免呆板的水平线
+    snowDepth[i] = INITIAL_DEPTH + Math.sin(i * 0.06) * 2.0 + Math.sin(i * 0.017) * 2.8;
+  }
+}
+
+// 雪面（地表）高度：越厚雪面越高(y 越小)
+function surfaceAtX(x) {
+  const i = Math.max(0, Math.min(cols - 1, Math.floor(x / COL_W)));
+  return groundY - snowDepth[i];
+}
+
+// 落雪累积：每片贡献固定量（与帧率无关），并摊到一个小邻域。
+// 摊开是因为真实积雪不会堆成一根针；配合 relaxSnowGround 的扩散形成自然起伏。
+function addSnow(x) {
+  const ci = Math.floor(x / COL_W);
+  for (let d = -ACC_SPREAD; d <= ACC_SPREAD; d++) {
+    const i = ci + d;
+    if (i < 0 || i >= cols) continue;
+    const w = 1 - Math.abs(d) / (ACC_SPREAD + 1);   // 三角权重：中心满、边缘渐隐
+    snowDepth[i] = Math.min(MAX_DEPTH, snowDepth[i] + ACC_PEAK * w);
+  }
+}
+
+// 表面松弛：轻微向邻域扩散，模拟雪的自然休止角，避免随机落点堆出尖刺
+function relaxSnowGround(dt) {
+  const k = Math.min(1.6 * dt, 0.2);   // 与帧率无关的强度
+  let prev = snowDepth[0];
+  for (let i = 1; i < cols - 1; i++) {
+    const cur = snowDepth[i];
+    snowDepth[i] = cur + ((prev + snowDepth[i + 1]) * 0.5 - cur) * k;
+    prev = cur;
+  }
+}
+
+function resizeCanvas() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  // 输入区顶边即「地面」，雨落到这里溅起水花，不再穿过去
+  groundY = canvas.height - inputArea.offsetHeight;
+  initSnowGround();     // 列数随宽度变化重建（窗口缩放会重置积雪）
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function stopEffect() {
+  if (animationId) cancelAnimationFrame(animationId);
+  animationId = null;
+  particles   = [];
+  splashes    = [];
+  lastTime    = 0;   // 重置时间基准，避免切换主题时的时间跳变
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+/* ---------- 时间步长（核心修复）---------- */
+// 旧写法 p.y += speed 是「每帧」位移，在 120/144Hz 高刷屏上会快一倍以上。
+// 改为「像素/秒」乘以真实帧间隔 dt，任何刷新率下速度都一致。
+// clamp 到 50ms 上限：切到后台再切回来时不会因为累积时间而瞬移。
+let lastTime = 0;
+function frameDelta(ts) {
+  const dt = lastTime ? (ts - lastTime) / 1000 : 0.016;
+  lastTime = ts;
+  return Math.min(dt, 0.05);
+}
+
+/* ---------- 雨滴（三层景深）---------- */
+// 真实雨滴终端速度约 5~9 m/s，其实很快。但画面要「真实」的关键是透视分层：
+// 远处的雨细/淡/慢，近处的雨粗/亮/快。单层同速会像条纹噪点整体下滚，显得躁。
+// 单位：speed 为 像素/秒
+const RAIN_LAYERS = [
+  // 远景：密集、细小、暗淡、下落慢
+  { count: 130, speed: [260, 420], len: [ 7, 13], width: 0.6, alpha: [0.12, 0.28] },
+  // 中景
+  { count:  70, speed: [450, 660], len: [14, 25], width: 1.0, alpha: [0.28, 0.48] },
+  // 近景：稀疏、粗长、明亮、下落快
+  { count:  30, speed: [720, 980], len: [26, 44], width: 1.7, alpha: [0.45, 0.70] }
+];
+
+const rnd = (r) => r[0] + Math.random() * (r[1] - r[0]);
+
+/* ---------- 落地水花 ---------- */
+// 雨滴撞击地面时溅起两部分：向上飞散的小水珠 + 贴地的椭圆涟漪。
+// 涟漪压扁成椭圆是模拟俯视/斜视地面的透视，这是「立体感」的关键。
+const GRAVITY = 1500;   // 像素重力加速度，让溅起的水珠快速回落
+
+function createSplash(x, y, impact) {
+  // 用 sqrt 而非线性：远景弱雨滴溅得很轻，近景大雨滴溅得明显，拉开层次
+  const force = Math.sqrt(impact);
+  // 1. 溅起的小水珠：主要向上，带一点左右随机
+  const drops = 2 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < drops; i++) {
+    const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.2;  // 向上 ±34°
+    const power = force * (7 + Math.random() * 4);
+    splashes.push({
+      kind: 'drop',
+      x, y,
+      vx: Math.cos(angle) * power,
+      vy: Math.sin(angle) * power,     // 负值为向上
+      r: 0.7 + Math.random() * 1.1,
+      life: 1,
+      decay: 1.8 + Math.random() * 1.4
+    });
+  }
+  // 2. 地面涟漪：随冲击力度扩散
+  splashes.push({
+    kind: 'ripple',
+    x, y,
+    r: 1.2,
+    maxR: 3 + force * 0.55,
+    life: 1,
+    decay: 2.6 + Math.random()
+  });
+}
+
+function updateSplashes(dt) {
+  splashes = splashes.filter(s => {
+    if (s.kind === 'drop') {
+      s.vy += GRAVITY * dt;              // 重力把水珠拉回地面
+      s.x  += s.vx * dt;
+      s.y  += s.vy * dt;
+      s.life -= s.decay * dt;
+      return s.life > 0 && s.y < groundY + 3;   // 落回地面即消失
+    }
+    // 涟漪：半径缓动扩张到 maxR
+    s.r += (s.maxR - s.r) * Math.min(7 * dt, 1);
+    s.life -= s.decay * dt;
+    return s.life > 0;
+  });
+}
+
+function drawSplashes() {
+  splashes.forEach(s => {
+    if (s.kind === 'drop') {
+      ctx.globalAlpha = Math.max(0, s.life) * 0.8;
+      ctx.fillStyle   = '#d3e6f7';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // 扁椭圆 = 透视变形的地面水圈
+      ctx.globalAlpha = Math.max(0, s.life) * 0.38;
+      ctx.strokeStyle = '#a8cbe8';
+      ctx.lineWidth   = 1;
+      ctx.beginPath();
+      ctx.ellipse(s.x, groundY, s.r, s.r * 0.3, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  });
+}
+
+function createRainDrop(layer) {
+  const L = RAIN_LAYERS[layer];
+  const speed = rnd(L.speed);
+  return {
+    x: Math.random() * (canvas.width + 200) - 100,
+    y: Math.random() * canvas.height,
+    length:  rnd(L.len),
+    speed,
+    vx: speed * 0.10,          // 轻微东风；现实中完全垂直的雨几乎不存在
+    width:   L.width,
+    opacity: rnd(L.alpha),
+    layer
+  };
+}
+
+function drawRain(ts) {
+  const dt = frameDelta(ts);
+  updateSplashes(dt);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.lineCap = 'round';
+
+  particles.forEach(p => {
+    p.y += p.speed * dt;
+    p.x += p.vx    * dt;
+
+    ctx.globalAlpha = p.opacity;
+    ctx.strokeStyle = '#c8dcf0';
+    ctx.lineWidth   = p.width;
+    ctx.beginPath();
+    // 当前位置是雨滴「头部」（最前端），尾巴要拖在运动矢量的反方向。
+    // 运动为 (+vx, +speed) 即右下，所以尾部应在左上 => 两个分量都要减。
+    // （旧代码 y 用了 +length 把尾巴画到下方，导致视觉朝向与实际下落相反）
+    const norm = Math.hypot(p.vx, p.speed);
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(p.x - (p.vx / norm) * p.length, p.y - (p.speed / norm) * p.length);
+    ctx.stroke();
+
+    // 落到「地面」（输入区顶边）→ 溅起水花，再回到天上重新下落
+    if (p.y >= groundY) {
+      createSplash(p.x, groundY, p.speed * (0.45 + p.layer * 0.32));
+      const fresh = createRainDrop(p.layer);
+      Object.assign(p, fresh, { y: -fresh.length - Math.random() * 90 });
+    }
+    if (p.x > canvas.width + 110) p.x = -90;
+  });
+
+  drawSplashes();
+  ctx.globalAlpha = 1;
+  animationId = requestAnimationFrame(drawRain);
+}
+
+function startRain() {
+  stopEffect();
+  currentEffect = 'rain';
+  lastTime = 0;
+  particles = [];
+  RAIN_LAYERS.forEach((L, i) => {
+    for (let n = 0; n < L.count; n++) particles.push(createRainDrop(i));
+  });
+  animationId = requestAnimationFrame(drawRain);
+}
+
+/* ---------- 雪花（三层景深）---------- */
+// 真实雪花终端速度仅 0.5~1.5 m/s，比雨滴慢一个数量级，所以必须有明显「飘」感。
+// 远景雪花只保留小圆点（远处看不清晶体结构），近景才画六角晶体剪影。
+const SNOW_LAYERS = [
+  // 远景：几乎悬停、极小、暗淡
+  { count: 95, speed: [12, 30], radius: [0.8, 1.6], alpha: [0.35, 0.60], drift: [14, 26] },
+  // 中景
+  { count: 60, speed: [34, 60], radius: [1.7, 2.9], alpha: [0.55, 0.80], drift: [22, 38] },
+  // 近景：大、亮、下落相对明显
+  { count: 28, speed: [65, 108], radius: [2.9, 4.6], alpha: [0.80, 1.00], drift: [34, 52] }
+];
+
+function createSnowFlake(layer) {
+  const L = SNOW_LAYERS[layer];
+  return {
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    radius:  rnd(L.radius),
+    speed:   rnd(L.speed),
+    drift:   rnd(L.drift),          // 摆幅（像素/秒）
+    opacity: rnd(L.alpha),
+    phase:   Math.random() * Math.PI * 2,
+    // 远景一律圆点，中近景才出现晶体
+    shape: (layer === 0 || Math.random() > 0.45) ? 'circle' : 'star',
+    layer
+  };
+}
+
+/* ---------- 雪地绘制 ---------- */
+function drawSnowGround() {
+  if (cols < 2) return;
+  ctx.beginPath();
+  ctx.moveTo(0, groundY);
+  ctx.lineTo(0, groundY - snowDepth[0]);
+  // 取相邻两点的中点作为二次贝塞尔端点，得到平滑起伏的雪面
+  for (let i = 0; i < cols - 1; i++) {
+    const y1 = groundY - snowDepth[i];
+    const y2 = groundY - snowDepth[i + 1];
+    ctx.quadraticCurveTo(i * COL_W, y1, (i + 0.5) * COL_W, (y1 + y2) * 0.5);
+  }
+  ctx.lineTo(canvas.width, groundY - snowDepth[cols - 1]);
+  ctx.lineTo(canvas.width, groundY);
+  ctx.closePath();
+
+  // 雪面纯白、底部仅带极淡冷调（真实积雪阴影会反射天光发蓝，
+  // 但只能点到为止，否则和页面上 #ffffff 的雪花不一致会显脏）
+  const grad = ctx.createLinearGradient(0, groundY - MAX_DEPTH, 0, groundY);
+  grad.addColorStop(0,    '#ffffff');
+  grad.addColorStop(0.55, '#fbfcfd');
+  grad.addColorStop(1,    '#ecf0f4');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // 雪面轮廓高光
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.lineWidth   = 1.6;
+  ctx.stroke();
+}
+
+/* ---------- 鼠标擦除积雪 ---------- */
+let erasing = false;
+let mouseX = -1, mouseY = -1;
+
+// 判定是否落在雪面上。
+// 上限取 groundY 很关键：输入区在 groundY 以下，若不限制会导致
+// 用户在输入框点击时被误判为擦雪，进而 preventDefault 掉输入框聚焦。
+function pointerInSnowGround(x, y) {
+  if (currentEffect !== 'snow' || cols < 2) return false;
+  return y >= surfaceAtX(x) - 8 && y <= groundY;
+}
+
+function eraseSnowAt(mx, my, dt) {
+  const half = Math.ceil(BRUSH_R / COL_W);
+  const ci   = Math.floor(mx / COL_W);
+  for (let i = ci - half; i <= ci + half; i++) {
+    if (i < 0 || i >= cols) continue;
+    const dist = Math.abs(i * COL_W - mx);
+    if (dist >= BRUSH_R) continue;
+    if (my < groundY - snowDepth[i] - 8) continue;   // 没够到这一列的雪面
+    const falloff = 1 - dist / BRUSH_R;              // 中心强、边缘弱
+    snowDepth[i] = Math.max(0, snowDepth[i] - ERASE_RATE * falloff * dt);
+  }
+}
+
+function drawSnow(ts) {
+  const dt = frameDelta(ts);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  relaxSnowGround(dt);      // 表面松弛
+  if (erasing) eraseSnowAt(mouseX, mouseY, dt);
+  drawSnowGround();         // 先画地面积雪，雪花在上
+
+  ctx.fillStyle = '#ffffff';
+
+  particles.forEach(p => {
+    p.phase += dt * 1.1;                              // 摇曳相位按时间推进
+    p.y     += p.speed * dt;                          // 下落
+    p.x     += Math.sin(p.phase) * p.drift * dt;      // 左右飘摆
+
+    ctx.globalAlpha = p.opacity;
+
+    if (p.shape === 'circle') {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // 六角雪花剪影，随下落缓慢自转
+      const spikes = 6, outer = p.radius * 2.1, inner = p.radius * 0.55;
+      ctx.beginPath();
+      for (let i = 0; i < spikes * 2; i++) {
+        const r = i % 2 === 0 ? outer : inner;
+        const a = (Math.PI / spikes) * i + p.phase * 0.4;
+        const x = p.x + Math.cos(a) * r;
+        const y = p.y + Math.sin(a) * r;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // 飘到「雪面」→ 积雪增厚，再回到天上重新飘落。
+    // 注意用雪面高度而非固定 groundY：雪越厚，接住雪花的位置就越高。
+    if (p.y >= surfaceAtX(p.x) || p.x < -50 || p.x > canvas.width + 50) {
+      addSnow(p.x);
+      Object.assign(p, createSnowFlake(p.layer), { y: -8 - Math.random() * 40 });
+    }
+  });
+
+  ctx.globalAlpha = 1;
+  animationId = requestAnimationFrame(drawSnow);
+}
+
+function startSnow() {
+  stopEffect();
+  currentEffect = 'snow';
+  lastTime = 0;
+  particles = [];
+  SNOW_LAYERS.forEach((L, i) => {
+    for (let n = 0; n < L.count; n++) particles.push(createSnowFlake(i));
+  });
+  animationId = requestAnimationFrame(drawSnow);
+}
+
+/* ============================================================
+   聊天逻辑（仅用户消息，不做 AI 回复）
+============================================================ */
+const chatContainer = document.getElementById('chatContainer');
+const userInput     = document.getElementById('userInput');
+const sendBtn       = document.getElementById('sendBtn');
+const welcome       = document.getElementById('welcome');
+
+function sendMessage() {
+  const text = userInput.value.trim();
+  if (!text) return;
+
+  // 隐藏欢迎语
+  if (welcome) welcome.style.display = 'none';
+
+  // 渲染用户消息
+  appendMessage(text, 'user');
+  userInput.value = '';
+  autoResize();
+
+  // 持久化
+  saveMessage(text, 'user');
+}
+
+function appendMessage(text, role) {
+  const div = document.createElement('div');
+  div.className = `message ${role}`;
+  div.textContent = text;
+  chatContainer.appendChild(div);
+  chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+function autoResize() {
+  userInput.style.height = 'auto';
+  userInput.style.height = userInput.scrollHeight + 'px';
+}
+
+userInput.addEventListener('input', autoResize);
+userInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+sendBtn.addEventListener('click', sendMessage);
+
+/* ============================================================
+   本地持久化
+============================================================ */
+function saveMessage(text, role) {
+  const list = JSON.parse(localStorage.getItem('chat-messages') || '[]');
+  list.push({ text, role, time: Date.now() });
+  localStorage.setItem('chat-messages', JSON.stringify(list));
+}
+
+function loadMessages() {
+  const list = JSON.parse(localStorage.getItem('chat-messages') || '[]');
+  if (list.length && welcome) welcome.style.display = 'none';
+  list.forEach(m => appendMessage(m.text, m.role));
+}
+
+/* ============================================================
+   鼠标擦雪交互
+============================================================ */
+// canvas 设了 pointer-events:none（不遮挡页面本身的点击），所以事件挂到 window
+
+/* ---------- 扫帚光标：用 Canvas 现画，不需要任何外部图片 ---------- */
+// cursor 图片按「图片自身像素」显示，不随 CSS 像素缩放，所以 32×32 正好约等于
+// 常规鼠标图标大小，也远低于浏览器 128×128 的上限（超了会被静默忽略）。
+// 用 PNG 而非 SVG：Safari 对 SVG 光标支持不稳定。
+function makeBroomCursor(angle) {
+  const S = 32, HX = 13, HY = 24;     // HX/HY 是热点，即刷毛接触雪面的那一点
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const g  = cv.getContext('2d');
+
+  // 以「刷毛接触点」为旋转中心：换姿势旋转时刷头始终压在热点上。
+  // 若绕别的点旋转，两种姿势的刷头会相对热点错位，看着像没对准。
+  g.save();
+  g.translate(HX, HY);
+  g.rotate(angle * Math.PI / 180);
+
+  // 同一套图形画两遍：先深色加粗描边（白雪地上才看得清轮廓），再叠亮色本体
+  const paint = (outline) => {
+    g.lineCap = 'round';
+
+    // 刷毛：根部收拢、末端散开
+    g.lineWidth   = outline ? 3.2 : 1.5;
+    g.strokeStyle = outline ? '#6b4423' : '#e2c483';
+    for (let i = -3; i <= 3; i++) {
+      g.beginPath();
+      g.moveTo(i * 0.9, -8.5);
+      g.lineTo(i * 2.1,  0);
+      g.stroke();
+    }
+    // 绑带
+    g.lineWidth   = outline ? 5.2 : 3.2;
+    g.strokeStyle = outline ? '#4e3216' : '#8a5a2b';
+    g.beginPath();
+    g.moveTo(-3.6, -9.5);
+    g.lineTo( 3.6, -9.5);
+    g.stroke();
+    // 木柄
+    g.lineWidth   = outline ? 4.8 : 2.8;
+    g.strokeStyle = outline ? '#6b4423' : '#b8834a';
+    g.beginPath();
+    g.moveTo(0,  -9.5);
+    g.lineTo(0, -19);
+    g.stroke();
+  };
+
+  paint(true);    // 描边
+  paint(false);   // 本体
+  g.restore();
+
+  // fallback 保留 crosshair：万一图形生成失败，至少还能精确定位
+  return `url(${cv.toDataURL('image/png')}) ${HX} ${HY}, crosshair`;
+}
+
+// 两个姿势各生成一次并缓存。绝不能在 mousemove 或动画帧里重复调用
+// toDataURL()，该操作开销大且会频繁触发 GC。
+const BROOM_IDLE  = makeBroomCursor(-10);   // 站立
+const BROOM_SWEEP = makeBroomCursor(-24);   // 前倾，发力扫雪
+
+let lastCursor = '';   // 缓存上一次实际写入的 cursor 字符串
+
+function setCursor(next) {
+  if (next === lastCursor) return;
+  lastCursor = next;
+  document.body.style.cursor = next;
+}
+
+function refreshSnowCursor() {
+  // 一旦按下左键就锁定为扫帚，不再重新判定「是否在雪地」。
+  // 因为这个判定依赖雪面当前高度（拿鼠标 y 去和 surfaceAtX 比），而擦拭
+  // 本身正在把雪面往下拉：雪一被擦薄判定就翻转成「不在雪地」，加上左右
+  // 拖动时相邻列积雪厚薄不一，判定会在 true/false 之间高频跳变 —— 
+  // 这正是图标闪烁的来源。所以仅在未按下时才做判定。
+  if (erasing) {
+    setCursor(BROOM_SWEEP);
+    return;
+  }
+  setCursor(pointerInSnowGround(mouseX, mouseY) ? BROOM_IDLE : '');
+}
+
+window.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;                      // 仅响应左键
+  if (!pointerInSnowGround(e.clientX, e.clientY)) return;
+  erasing = true;
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  refreshSnowCursor();                             // 切到前倾的扫雪姿势
+  e.preventDefault();                              // 拖动时不选中文本
+});
+
+window.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  refreshSnowCursor();
+  if (erasing) e.preventDefault();
+});
+
+// 松开或窗口失焦都要停，否则会出现「粘住不放」的持续擦除
+window.addEventListener('mouseup', () => { erasing = false; refreshSnowCursor(); });
+window.addEventListener('blur',    () => { erasing = false; refreshSnowCursor(); });
+
+/* ============================================================
+   初始化
+============================================================ */
+loadMessages();
+setTheme(localStorage.getItem('chat-theme') || 'normal');
+</script>
+</body>
+</html>
