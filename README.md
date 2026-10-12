@@ -80,6 +80,13 @@ python -m http.server 8000
 - 仅前端演示：**没有 AI 回复**，无后端、无网络请求
 - 主题选择与聊天记录保存在浏览器 `localStorage`，刷新不丢，但不会同步到服务器
 - 不引用任何外部资源（无 CDN、无外链字体、无图片文件），图标均为内联 SVG 或 Canvas 绘制
+- 
+## 后续计划
+
+- [ ] 新增「星空」外观，点击有流星划过
+- [ ] 雨天点击触发闪电特效
+
+欢迎在 [Issues](https://github.com/ToneChou/weather-chat/issues) 提出建议或想法。
 
 ## 贡献
 
