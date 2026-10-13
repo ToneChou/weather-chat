@@ -16,6 +16,7 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
                  "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
     overflow: hidden;
+    -webkit-tap-highlight-color: transparent;   /* 移动端点击不出现高亮色块 */
   }
 
   /* ===== 主题色 ===== */
@@ -373,7 +374,14 @@ let cols      = 0;
 let snowDepth = [];
 
 function initSnowGround() {
-  cols = Math.max(2, Math.ceil(canvas.width / COL_W) + 1);
+  const newCols = Math.max(2, Math.ceil(canvas.width / COL_W) + 1);
+
+  // 列数没变就保留已有积雪，不重新初始化。
+  // 手机上点输入框弹出键盘会触发 resize，若不加这个判断，
+  // 每打一次字积雪就被打回初始厚度，前面的累积全白费。
+  if (newCols === cols && snowDepth.length === cols) return;
+
+  cols = newCols;
   snowDepth = new Array(cols);
   for (let i = 0; i < cols; i++) {
     // 初始起伏：两层不同频率的正弦叠加，避免呆板的水平线
@@ -875,26 +883,87 @@ function refreshSnowCursor() {
   setCursor(pointerInSnowGround(mouseX, mouseY) ? BROOM_IDLE : '');
 }
 
+/* ---------- 擦雪状态机：鼠标与触摸共用 ---------- */
+// 抽成三个函数，让鼠标和触摸走同一套判断，
+// 避免两份逻辑各自演化导致行为不一致。
+function beginErase(x, y) {
+  // 判定交给 pointerInSnowGround，它内部的 groundY 上限很关键：
+  // 点在输入框上不能算擦雪，否则会把输入框聚焦给吞掉
+  if (!pointerInSnowGround(x, y)) return false;
+  erasing = true;
+  mouseX = x;
+  mouseY = y;
+  refreshSnowCursor();
+  return true;
+}
+
+function moveErase(x, y) {
+  mouseX = x;
+  mouseY = y;
+  refreshSnowCursor();
+}
+
+function endErase() {
+  erasing = false;
+  refreshSnowCursor();
+}
+
+/* ---------- 鼠标链路 ---------- */
 window.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;                      // 仅响应左键
-  if (!pointerInSnowGround(e.clientX, e.clientY)) return;
-  erasing = true;
-  mouseX = e.clientX;
-  mouseY = e.clientY;
-  refreshSnowCursor();                             // 切到前倾的扫雪姿势
-  e.preventDefault();                              // 拖动时不选中文本
+  // 起手成功才拦截默认行为，点在输入框/消息区时放行
+  if (beginErase(e.clientX, e.clientY)) e.preventDefault();  // 拖动时不选中文本
 });
 
 window.addEventListener('mousemove', (e) => {
-  mouseX = e.clientX;
-  mouseY = e.clientY;
-  refreshSnowCursor();
+  moveErase(e.clientX, e.clientY);
   if (erasing) e.preventDefault();
 });
 
+/* ---------- 触摸链路（手机端）---------- */
+// 移动端浏览器只派发触摸事件，不派发 mousedown/mousemove —— 
+// 没有这一套，手机端擦雪完全失效。
+function touchPoint(e) {
+  // touchend 时 e.touches 已为空，坐标只能从 changedTouches 取；
+  // 同时只认第一个触点，避免多指操作时产生错乱擦除
+  const t = e.touches[0] || e.changedTouches[0];
+  return t ? { x: t.clientX, y: t.clientY } : null;
+}
+
+window.addEventListener('touchstart', (e) => {
+  const p = touchPoint(e);
+  if (!p) return;
+  if (beginErase(p.x, p.y)) e.preventDefault();
+}, { passive: false });
+
+window.addEventListener('touchmove', (e) => {
+  if (!erasing) return;        // 没在擦雪就别干预，页面该滚动还得滚
+  const p = touchPoint(e);
+  if (!p) return;
+  moveErase(p.x, p.y);
+  e.preventDefault();          // 阻止手指拖动时页面跟着滚
+  // 上面这个 preventDefault 能生效，全靠注册时的 { passive: false }：
+  // 现代浏览器对 window 上的 touchmove 默认按 passive 处理，
+  // 不显式声明的话 preventDefault() 会被忽略并告警。
+}, { passive: false });
+
+window.addEventListener('touchend', (e) => {
+  const p = touchPoint(e);
+  if (p) moveErase(p.x, p.y);  // 松手瞬间的位置也擦一下
+  endErase();
+}, { passive: false });
+
+// 系统打断（来电、手势返回等）时也要收手
+window.addEventListener('touchcancel', endErase, { passive: true });
+
+// 长按雪地时抑制系统菜单，否则 iOS 会弹出菜单打断擦雪
+window.addEventListener('contextmenu', (e) => {
+  if (pointerInSnowGround(e.clientX, e.clientY)) e.preventDefault();
+});
+
 // 松开或窗口失焦都要停，否则会出现「粘住不放」的持续擦除
-window.addEventListener('mouseup', () => { erasing = false; refreshSnowCursor(); });
-window.addEventListener('blur',    () => { erasing = false; refreshSnowCursor(); });
+window.addEventListener('mouseup', endErase);
+window.addEventListener('blur',    endErase);
 
 /* ============================================================
    初始化
